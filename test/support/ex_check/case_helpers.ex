@@ -16,6 +16,16 @@ defmodule ExCheck.CaseHelpers do
     output
   end
 
+  def assert_ex_unit_seed(output) do
+    assert ex_unit_seed_printed?(output),
+           "expected ExUnit run output to include seed information, got:\n\n#{output}"
+  end
+
+  def ex_unit_seed_printed?(output) do
+    String.contains?(output, "Running ExUnit with seed") or
+      String.contains?(output, "Randomized with seed")
+  end
+
   def create_tmp_directory do
     timestamp = DateTime.utc_now() |> DateTime.to_unix(:microsecond)
     unique_id = :crypto.strong_rand_bytes(12) |> Base.url_encode64()

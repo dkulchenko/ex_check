@@ -30,6 +30,7 @@ Takes care of the little details, so you don't have to.
 - Compiles the project and collects compilation warnings in one go
 - Ensures that output from tools is [ANSI formatted & colorized](https://hexdocs.pm/ex_check/Mix.Tasks.Check.html#module-tool-processes-and-ansi-formatting)
 - Retries ExUnit with the `--failed` flag
+- Can stop immediately after the first failure with `--fail-fast`
 
 Read more in the introductory ["One task to rule all Elixir analysis & testing tools"](https://cloudless.studio/one-task-to-rule-all-elixir-analysis-testing-tools) article.
 

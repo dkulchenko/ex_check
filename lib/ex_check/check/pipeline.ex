@@ -15,10 +15,13 @@ defmodule ExCheck.Check.Pipeline do
   # - a list of payloads that were never reached because they were throttled out until the end
 
   def run(pending, opts) do
-    loop({pending, [], nil, []}, opts)
+    halt_fn = Keyword.get(opts, :halt_fn, fn _ -> :cont end)
+    cancel_fn = Keyword.get(opts, :cancel_fn, fn _ -> :ok end)
+
+    loop({pending, [], nil, []}, opts, halt_fn, cancel_fn)
   end
 
-  defp loop({pending, running, collecting, finished}, opts) do
+  defp loop({pending, running, collecting, finished}, opts, halt_fn, cancel_fn) do
     {pending, running} = run_next(pending, running, finished, opts)
     {running, collecting} = collect_next(running, collecting)
 
@@ -26,10 +29,23 @@ defmodule ExCheck.Check.Pipeline do
       receive do
         {:finished, payload, result} ->
           {pending, collecting, finished} = finish(payload, result, pending, collecting, finished)
-          loop({pending, running, collecting, finished}, opts)
+          case halt_fn.(result) do
+            :cont ->
+              loop({pending, running, collecting, finished}, opts, halt_fn, cancel_fn)
+
+            {:halt, reason} ->
+              cancel_running(running, cancel_fn)
+              running_payloads = Enum.map(running, &elem(&1, 0))
+
+              {:halted, finished, pending, running_payloads, reason}
+          end
       end
     else
-      {finished, pending}
+      if running == [] do
+        {finished, pending}
+      else
+        loop({pending, running, collecting, finished}, opts, halt_fn, cancel_fn)
+      end
     end
   end
 
@@ -52,17 +68,23 @@ defmodule ExCheck.Check.Pipeline do
     Enum.map(new_running, fn payload ->
       runner_pid =
         spawn_link(fn ->
-          payload = start_fn.(payload)
-
-          receive do
-            {:collect, collector_pid} ->
-              result = collect_fn.(payload)
-              send(collector_pid, {:result, result})
-          end
+          running_payload = start_fn.(payload)
+          runner_loop(running_payload, collect_fn)
         end)
 
       {payload, runner_pid}
     end)
+  end
+
+  defp runner_loop(running_payload, collect_fn) do
+    receive do
+      {:collect, collector_pid} ->
+        result = collect_fn.(running_payload)
+        send(collector_pid, {:result, result})
+
+      {:cancel, cancel_fn} when is_function(cancel_fn, 1) ->
+        cancel_fn.(running_payload)
+    end
   end
 
   defp collect_next([{payload, runner_pid} | rest], nil) do
@@ -92,5 +114,11 @@ defmodule ExCheck.Check.Pipeline do
     finished = finished ++ [result]
 
     {pending, collecting, finished}
+  end
+
+  defp cancel_running(running, cancel_fn) do
+    Enum.each(running, fn {_payload, runner_pid} ->
+      send(runner_pid, {:cancel, cancel_fn})
+    end)
   end
 end

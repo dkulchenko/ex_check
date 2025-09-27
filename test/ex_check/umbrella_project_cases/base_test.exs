@@ -17,6 +17,6 @@ defmodule ExCheck.UmbrellaProjectCases.BaseTest do
     assert output =~ "dialyzer skipped due to missing package dialyxir"
     assert output =~ "ex_doc skipped due to missing package ex_doc"
 
-    assert output =~ "Randomized with seed"
+    assert_ex_unit_seed(output)
   end
 end
