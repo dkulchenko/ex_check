@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - **Added** support for disabling failed tool reprinting via `--no-reprint` CLI flag or `reprint: false` config
+- **Added** optional fail-fast mode that stops the pipeline after the first failure
 
 ## [0.16.0] - 2024-03-01
 

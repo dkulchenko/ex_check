@@ -75,18 +75,39 @@ defmodule ExCheck.Check do
   end
 
   defp run_tools(tools, opts) do
-    {finished, broken} =
-      Pipeline.run(
-        tools,
-        throttle_fn: &throttle_tools(&1, &2, &3, opts),
-        start_fn: &start_tool/1,
-        collect_fn: &await_tool/1
-      )
+    fail_fast? = Keyword.get(opts, :fail_fast, false)
 
-    skipped = filter_broken_skipped(broken, finished)
+    pipeline_opts = [
+      throttle_fn: &throttle_tools(&1, &2, &3, opts),
+      start_fn: &start_tool/1,
+      collect_fn: &await_tool/1
+    ]
 
-    {finished, skipped}
+    pipeline_opts =
+      if fail_fast? do
+        pipeline_opts ++
+          [
+            cancel_fn: &cancel_tool/1,
+            halt_fn: &halt_on_failure/1
+          ]
+      else
+        pipeline_opts
+      end
+
+    case Pipeline.run(tools, pipeline_opts) do
+      {finished, broken} ->
+        skipped = filter_broken_skipped(broken, finished)
+        {finished, skipped}
+
+      {:halted, finished, pending, running, _reason} ->
+        not_finished = pending ++ running
+        skipped = Enum.map(not_finished, &mark_not_finished/1)
+        {finished, skipped}
+    end
   end
+
+  defp halt_on_failure({:error, _, _}), do: {:halt, :failure}
+  defp halt_on_failure(_), do: :cont
 
   defp filter_broken_skipped(broken, finished) do
     broken
@@ -187,6 +208,15 @@ defmodule ExCheck.Check do
     {:running, {name, cmd, opts}, task}
   end
 
+  defp cancel_tool({:running, {_, _, _}, task}) do
+    Command.stop(task)
+  end
+
+  defp cancel_tool({:pending, _}), do: :ok
+
+  defp mark_not_finished({:pending, {name, _, _}}), do: {:skipped, name, :not_finished}
+  defp mark_not_finished({:running, {name, _, _}, _}), do: {:skipped, name, :not_finished}
+
   defp await_tool({:running, {name, cmd, opts}, task}) do
     mode_suffix = if mode = opts[:mode], do: [" in ", b(mode), " mode"], else: []
 
@@ -272,6 +302,10 @@ defmodule ExCheck.Check do
 
   defp format_skip_reason({:deps, [name | _]}) do
     ["unsatisfied dependency ", format_tool_name(name)]
+  end
+
+  defp format_skip_reason(:not_finished) do
+    ["not finished"]
   end
 
   defp format_skip_reason({:package, name}) do

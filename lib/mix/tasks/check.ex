@@ -67,7 +67,9 @@ defmodule Mix.Tasks.Check do
   5. Manifest is written to specified file or tmp directory in order to allow running only failed
      checks and for sake of reporting to CI.
 
-  6. If any of the tools have failed, the Erlang system gets requested to emit exit status 1 upon
+  6. Optionally, you may enable fail-fast mode to stop the pipeline as soon as one tool fails.
+
+  7. If any of the tools have failed, the Erlang system gets requested to emit exit status 1 upon
      shutdown in order to make the CI build fail.
 
   ### Tool order
@@ -194,6 +196,7 @@ defmodule Mix.Tasks.Check do
   - `:fix` - toggles running tools in fix mode in order to resolve issues automatically; default: `false`
   - `:retry` - toggles running only checks that have failed in the last run; default: 'true' if manifest exists
   - `:reprint` - toggles reprinting output from failed tools once all tools finish; default: `true`
+  - `:fail_fast` - stops running remaining tools as soon as a failure is detected; default: `false`
   - `:tools` - a list of tools to run; default: curated tools; more info below
 
   Tool list under `:tools` key may contain following tool tuples:
@@ -249,6 +252,7 @@ defmodule Mix.Tasks.Check do
   - `--[no-]fix` - (don't) run tools in fix mode in order to resolve issues automatically
   - `--[no-]retry` - (don't) run only checks that have failed in the last run
   - `--[no-]reprint` - (don't) reprint output from failed tools once all tools finish
+  - `--[no-]fail-fast` - (don't) stop after the first failure
   - `--[no-]parallel` - (don't) run tools in parallel
   - `--[no-]skipped` - (don't) print skipped tools in summary
 
@@ -283,6 +287,7 @@ defmodule Mix.Tasks.Check do
     parallel: :boolean,
     retry: :boolean,
     reprint: :boolean,
+    fail_fast: :boolean,
     skipped: :boolean
   ]
 

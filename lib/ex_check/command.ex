@@ -47,6 +47,13 @@ defmodule ExCheck.Command do
     {output, status, duration}
   end
 
+  def stop(%Task{} = task) do
+    Task.shutdown(task, :brutal_kill)
+    :ok
+  catch
+    :exit, _ -> :ok
+  end
+
   @ansi_code_regex ~r/(\x1b\[[0-9;]*m)/
 
   defp parse_stream_option(opts) do
