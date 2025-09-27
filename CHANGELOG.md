@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+- **Added** support for disabling failed tool reprinting via `--no-reprint` CLI flag or `reprint: false` config
 
 ## [0.16.0] - 2024-03-01
 

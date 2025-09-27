@@ -51,7 +51,7 @@ defmodule ExCheck.Check do
     all_results = [compiler_result | others_results]
     failed_results = Enum.filter(all_results, &match?({:error, _, _}, &1))
 
-    reprint_errors(failed_results)
+    maybe_reprint_errors(failed_results, opts)
     print_summary(all_results, total_duration, opts)
     Manifest.save(all_results, opts)
     maybe_set_exit_status(failed_results)
@@ -209,6 +209,12 @@ defmodule ExCheck.Check do
 
   defp output_needs_padding?(output) do
     not (String.match?(output, ~r/\n{2,}$/) or output == "")
+  end
+
+  defp maybe_reprint_errors(failed_tools, opts) do
+    if Keyword.get(opts, :reprint, true) do
+      reprint_errors(failed_tools)
+    end
   end
 
   defp reprint_errors(failed_tools) do

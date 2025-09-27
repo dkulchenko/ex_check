@@ -58,7 +58,8 @@ defmodule Mix.Tasks.Check do
      their output is streamed live one by one for instant insight.
 
   3. Output from tools that have failed gets reprinted for sake of easily reading into them all at
-     once and identifying all project issues in one go.
+     once and identifying all project issues in one go. You can disable reprinting with
+     `--no-reprint` or `reprint: false` in config when the initial streaming output is enough.
 
   4. Summary is presented with a list of all tools that have failed, succeeded or were skipped due
      to missing files or project dependencies.
@@ -192,6 +193,7 @@ defmodule Mix.Tasks.Check do
   - `:skipped` - toggles printing skipped tools in summary; default: `true`
   - `:fix` - toggles running tools in fix mode in order to resolve issues automatically; default: `false`
   - `:retry` - toggles running only checks that have failed in the last run; default: 'true' if manifest exists
+  - `:reprint` - toggles reprinting output from failed tools once all tools finish; default: `true`
   - `:tools` - a list of tools to run; default: curated tools; more info below
 
   Tool list under `:tools` key may contain following tool tuples:
@@ -246,6 +248,7 @@ defmodule Mix.Tasks.Check do
   - `--except dialyzer --except credo ...` - don't run specified check(s)
   - `--[no-]fix` - (don't) run tools in fix mode in order to resolve issues automatically
   - `--[no-]retry` - (don't) run only checks that have failed in the last run
+  - `--[no-]reprint` - (don't) reprint output from failed tools once all tools finish
   - `--[no-]parallel` - (don't) run tools in parallel
   - `--[no-]skipped` - (don't) print skipped tools in summary
 
@@ -279,6 +282,7 @@ defmodule Mix.Tasks.Check do
     only: :keep,
     parallel: :boolean,
     retry: :boolean,
+    reprint: :boolean,
     skipped: :boolean
   ]
 
