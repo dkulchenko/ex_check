@@ -8,7 +8,7 @@ defmodule ExCheck.Config.Default do
   # - Compiler uses incremental compilation (no --force)
   # - Tests run only stale tests (--stale)
   # - Credo checks only git-changed files
-  # - Some tools (formatter, unused_deps, mix_audit, sobelow) are skipped
+  # - Some tools (unused_deps, mix_audit, sobelow) are skipped
   #
   # Use --full flag to run comprehensive checks (all tools, full commands).
   @curated_tools [
@@ -17,7 +17,7 @@ defmodule ExCheck.Config.Default do
     {:unused_deps, "mix deps.unlock --check-unused",
      detect: [{:elixir, ">= 1.10.0"}], fix: "mix deps.unlock --unused", full_only: true},
     {:formatter, "mix format --check-formatted",
-     detect: [{:file, ".formatter.exs"}], fix: "mix format", full_only: true},
+     detect: [{:file, ".formatter.exs"}], fix: "mix format"},
     {:mix_audit, "mix deps.audit", detect: [{:package, :mix_audit}], full_only: true},
     {:credo, "mix credo", detect: [{:package, :credo}], git_changed: true},
     {:doctor, "mix doctor", detect: [{:package, :doctor}, {:elixir, ">= 1.8.0"}]},
