@@ -3,18 +3,29 @@ defmodule ExCheck.Config.Default do
 
   # Default tool order tries to put short-running tools first in order for sequential output
   # streaming to display as many outputs as possible as soon as possible.
+  #
+  # By default, tools run in "quick" mode optimized for fast iteration:
+  # - Compiler uses incremental compilation (no --force)
+  # - Tests run only stale tests (--stale)
+  # - Credo checks only git-changed files
+  # - Some tools (formatter, unused_deps, mix_audit, sobelow) are skipped
+  #
+  # Use --full flag to run comprehensive checks (all tools, full commands).
   @curated_tools [
-    {:compiler, "mix compile --warnings-as-errors --force"},
+    {:compiler, "mix compile --warnings-as-errors",
+     full: "mix compile --warnings-as-errors --force"},
     {:unused_deps, "mix deps.unlock --check-unused",
-     detect: [{:elixir, ">= 1.10.0"}], fix: "mix deps.unlock --unused"},
+     detect: [{:elixir, ">= 1.10.0"}], fix: "mix deps.unlock --unused", full_only: true},
     {:formatter, "mix format --check-formatted",
-     detect: [{:file, ".formatter.exs"}], fix: "mix format"},
-    {:mix_audit, "mix deps.audit", detect: [{:package, :mix_audit}]},
-    {:credo, "mix credo", detect: [{:package, :credo}]},
+     detect: [{:file, ".formatter.exs"}], fix: "mix format", full_only: true},
+    {:mix_audit, "mix deps.audit", detect: [{:package, :mix_audit}], full_only: true},
+    {:credo, "mix credo", detect: [{:package, :credo}], git_changed: true},
     {:doctor, "mix doctor", detect: [{:package, :doctor}, {:elixir, ">= 1.8.0"}]},
-    {:sobelow, "mix sobelow --exit", umbrella: [recursive: true], detect: [{:package, :sobelow}]},
+    {:sobelow, "mix sobelow --exit", umbrella: [recursive: true],
+     detect: [{:package, :sobelow}], full_only: true},
     {:ex_doc, "mix docs", detect: [{:package, :ex_doc}]},
-    {:ex_unit, "mix test", detect: [{:file, "test"}], retry: "mix test --failed"},
+    {:ex_unit, "mix test --stale", detect: [{:file, "test"}],
+     retry: "mix test --failed", full: "mix test"},
     {:dialyzer, "mix dialyzer", detect: [{:package, :dialyxir}]},
     {:gettext, "mix gettext.extract --check-up-to-date",
      detect: [{:package, :gettext}], deps: [:ex_unit]},

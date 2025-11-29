@@ -5,7 +5,7 @@ defmodule ExCheck.Config.Loader do
   alias ExCheck.Project
 
   @config_filename ".check.exs"
-  @option_list ~w[parallel skipped fix retry reprint fail_fast]a
+  @option_list ~w[parallel skipped fix full retry reprint fail_fast]a
 
   def load(opts) do
     config_file =

@@ -194,6 +194,7 @@ defmodule Mix.Tasks.Check do
   - `:parallel` - toggles running tools in parallel; default: `true`
   - `:skipped` - toggles printing skipped tools in summary; default: `true`
   - `:fix` - toggles running tools in fix mode in order to resolve issues automatically; default: `false`
+  - `:full` - toggles running tools in full mode (enables all tools, uses full commands); default: `false`
   - `:retry` - toggles running only checks that have failed in the last run; default: 'true' if manifest exists
   - `:reprint` - toggles reprinting output from failed tools once all tools finish; default: `true`
   - `:fail_fast` - stops running remaining tools as soon as a failure is detected; default: `false`
@@ -217,6 +218,10 @@ defmodule Mix.Tasks.Check do
   - `:enable_ansi` - toggles extending Elixir/Mix commands to have ANSI enabled; default: `true`
   - `:umbrella` - configures the tool behaviour in an umbrella project; more info below
   - `:fix` - fix mode command as string or list of strings (executable + arguments)
+  - `:full` - full mode command as string or list of strings (executable + arguments)
+  - `:full_only` - toggles whether tool only runs in full mode; default: `false`
+  - `:git_changed` - appends git-changed files to command (skips if none); default: `false`
+  - `:git_changed_extensions` - file extensions for git_changed filter; default: `[".ex", ".exs"]`
   - `:retry` - command to retry after failure as string or list of strings (executable + arguments)
 
   Dependency list under `:deps` key may contain `:tool_name` atoms or `{:tool_name, opts}` tuples
@@ -250,6 +255,7 @@ defmodule Mix.Tasks.Check do
   - `--only dialyzer --only credo ...` - run only specified check(s)
   - `--except dialyzer --except credo ...` - don't run specified check(s)
   - `--[no-]fix` - (don't) run tools in fix mode in order to resolve issues automatically
+  - `--[no-]full` - run all tools with full commands (enables full_only tools, uses full commands)
   - `--[no-]retry` - (don't) run only checks that have failed in the last run
   - `--[no-]reprint` - (don't) reprint output from failed tools once all tools finish
   - `--[no-]fail-fast` - (don't) stop after the first failure
@@ -282,6 +288,7 @@ defmodule Mix.Tasks.Check do
     except: :keep,
     exit_status: :boolean,
     fix: :boolean,
+    full: :boolean,
     manifest: :string,
     only: :keep,
     parallel: :boolean,
@@ -294,6 +301,7 @@ defmodule Mix.Tasks.Check do
   @aliases [
     c: :config,
     f: :fix,
+    F: :full,
     m: :manifest,
     o: :only,
     r: :retry,

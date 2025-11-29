@@ -157,7 +157,8 @@ defmodule ExCheck.Check.Compiler do
   defp disabled?(name, tool_opts, opts) do
     Keyword.get(tool_opts, :enabled, true) == false ||
       (Keyword.has_key?(opts, :only) && !Enum.any?(opts, &(&1 == {:only, name}))) ||
-      Enum.any?(opts, fn i -> i == {:except, name} end)
+      Enum.any?(opts, fn i -> i == {:except, name} end) ||
+      (Keyword.get(tool_opts, :full_only, false) && !opts[:full])
   end
 
   defp find_failed_detection(name, tool_opts) do
@@ -211,13 +212,49 @@ defmodule ExCheck.Check.Compiler do
       |> command_to_array()
       |> postprocess_cmd(tool_opts)
 
-    command_opts =
-      tool_opts
-      |> Keyword.take([:cd, :env, :deps])
-      |> Keyword.put(:mode, mode)
-      |> Keyword.put(:umbrella_parallel, get_in(tool_opts, [:umbrella, :parallel]))
+    case apply_git_changed(command, tool_opts, opts) do
+      {:skip, reason} ->
+        {:skipped, name, {:git_changed, reason}}
 
-    {:pending, {name, command, command_opts}}
+      {:ok, command} ->
+        command_opts =
+          tool_opts
+          |> Keyword.take([:cd, :env, :deps])
+          |> Keyword.put(:mode, mode)
+          |> Keyword.put(:umbrella_parallel, get_in(tool_opts, [:umbrella, :parallel]))
+
+        {:pending, {name, command, command_opts}}
+    end
+  end
+
+  defp apply_git_changed(cmd, tool_opts, opts) do
+    if Keyword.get(tool_opts, :git_changed) && !opts[:full] do
+      extensions = Keyword.get(tool_opts, :git_changed_extensions, ~w[.ex .exs])
+
+      case get_changed_files(extensions) do
+        [] ->
+          {:skip, "no changed files"}
+
+        files ->
+          {:ok, cmd ++ files}
+      end
+    else
+      {:ok, cmd}
+    end
+  end
+
+  defp get_changed_files(extensions) do
+    case System.cmd("git", ["diff", "--name-only", "HEAD"], stderr_to_stdout: true) do
+      {output, 0} ->
+        output
+        |> String.split("\n", trim: true)
+        |> Enum.filter(fn file ->
+          Enum.any?(extensions, &String.ends_with?(file, &1))
+        end)
+
+      _ ->
+        []
+    end
   end
 
   defp pick_mode_and_command(tool_opts, opts) do
@@ -227,6 +264,9 @@ defmodule ExCheck.Check.Compiler do
 
       opts[:retry] && tool_opts[:retry] ->
         {:retry, tool_opts[:retry]}
+
+      opts[:full] && tool_opts[:full] ->
+        {:full, tool_opts[:full]}
 
       true ->
         {nil, Keyword.fetch!(tool_opts, :command)}
