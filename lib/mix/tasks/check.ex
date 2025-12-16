@@ -222,6 +222,7 @@ defmodule Mix.Tasks.Check do
   - `:full_only` - toggles whether tool only runs in full mode; default: `false`
   - `:git_changed` - appends git-changed files to command (skips if none); default: `false`
   - `:git_changed_extensions` - file extensions for git_changed filter; default: `[".ex", ".exs"]`
+  - `:git_changed_include` - path prefixes to include for git_changed filter; default: `nil` (all paths)
   - `:retry` - command to retry after failure as string or list of strings (executable + arguments)
 
   Dependency list under `:deps` key may contain `:tool_name` atoms or `{:tool_name, opts}` tuples

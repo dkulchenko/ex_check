@@ -230,8 +230,9 @@ defmodule ExCheck.Check.Compiler do
   defp apply_git_changed(cmd, tool_opts, opts) do
     if Keyword.get(tool_opts, :git_changed) && !opts[:full] do
       extensions = Keyword.get(tool_opts, :git_changed_extensions, ~w[.ex .exs])
+      include_prefixes = Keyword.get(tool_opts, :git_changed_include)
 
-      case get_changed_files(extensions) do
+      case get_changed_files(extensions, include_prefixes) do
         [] ->
           {:skip, "no changed files"}
 
@@ -243,18 +244,27 @@ defmodule ExCheck.Check.Compiler do
     end
   end
 
-  defp get_changed_files(extensions) do
+  defp get_changed_files(extensions, include_prefixes) do
     case System.cmd("git", ["diff", "--name-only", "HEAD"], stderr_to_stdout: true) do
       {output, 0} ->
         output
         |> String.split("\n", trim: true)
-        |> Enum.filter(fn file ->
-          Enum.any?(extensions, &String.ends_with?(file, &1))
-        end)
+        |> Enum.filter(&matches_extension?(&1, extensions))
+        |> Enum.filter(&matches_include_prefix?(&1, include_prefixes))
 
       _ ->
         []
     end
+  end
+
+  defp matches_extension?(file, extensions) do
+    Enum.any?(extensions, &String.ends_with?(file, &1))
+  end
+
+  defp matches_include_prefix?(_file, nil), do: true
+
+  defp matches_include_prefix?(file, prefixes) do
+    Enum.any?(prefixes, &String.starts_with?(file, &1))
   end
 
   defp pick_mode_and_command(tool_opts, opts) do
