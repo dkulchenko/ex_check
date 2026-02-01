@@ -198,6 +198,7 @@ defmodule Mix.Tasks.Check do
   - `:retry` - toggles running only checks that have failed in the last run; default: 'true' if manifest exists
   - `:reprint` - toggles reprinting output from failed tools once all tools finish; default: `true`
   - `:fail_fast` - stops running remaining tools as soon as a failure is detected; default: `true`
+  - `:lock_global` - toggles machine-wide lock instead of per-project lock; default: `false`
   - `:tools` - a list of tools to run; default: curated tools; more info below
 
   Tool list under `:tools` key may contain following tool tuples:
@@ -261,6 +262,7 @@ defmodule Mix.Tasks.Check do
   - `--[no-]reprint` - (don't) reprint output from failed tools once all tools finish
   - `--[no-]fail-fast` - (don't) stop after the first failure
   - `--[no-]lock` - (don't) wait for other `mix check` runs to finish before starting
+  - `--[no-]lock-global` - (don't) enforce machine-wide lock instead of per-project lock
   - `--[no-]parallel` - (don't) run tools in parallel
   - `--[no-]skipped` - (don't) print skipped tools in summary
 
@@ -292,6 +294,7 @@ defmodule Mix.Tasks.Check do
     fix: :boolean,
     incremental: :boolean,
     lock: :boolean,
+    lock_global: :boolean,
     manifest: :string,
     only: :keep,
     parallel: :boolean,

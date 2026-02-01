@@ -20,7 +20,9 @@ defmodule ExCheck.Check do
       |> Manifest.convert_retry_to_only()
 
     if Keyword.get(opts, :lock, true) do
-      Lock.with_lock(fn -> compile_and_run_tools(tools, opts) end)
+      Lock.with_lock(fn -> compile_and_run_tools(tools, opts) end,
+        global: Keyword.get(opts, :lock_global, false)
+      )
     else
       compile_and_run_tools(tools, opts)
     end

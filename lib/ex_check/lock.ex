@@ -6,23 +6,24 @@ defmodule ExCheck.Lock do
   @escape Enum.map(~c" [~#%&*{}\\:<>?/+|\"]", &<<&1::utf8>>)
   @poll_interval_ms 1_000
 
-  def with_lock(fun) do
-    acquire()
+  def with_lock(fun, opts \\ []) do
+    global? = Keyword.get(opts, :global, false)
+    acquire(global?)
 
     try do
       fun.()
     after
-      release()
+      release(global?)
     end
   end
 
-  def acquire do
-    path = get_path()
+  def acquire(global? \\ false) do
+    path = get_path(global?)
     do_acquire(path, false)
   end
 
-  def release do
-    path = get_path()
+  def release(global? \\ false) do
+    path = get_path(global?)
     File.rm(path)
     :ok
   end
@@ -78,8 +79,12 @@ defmodule ExCheck.Lock do
     end
   end
 
-  defp get_path do
+  defp get_path(true = _global?) do
+    Path.join(System.tmp_dir!(), "ex_check.lock")
+  end
+
+  defp get_path(false = _global?) do
     app_id = File.cwd!() |> String.replace(@escape, "_") |> String.replace(~r/^_+/, "")
-    Path.join([System.tmp_dir!(), "ex_check-lock-#{app_id}.lock"])
+    Path.join(System.tmp_dir!(), "ex_check-lock-#{app_id}.lock")
   end
 end

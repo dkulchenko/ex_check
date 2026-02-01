@@ -24,6 +24,9 @@ defmodule ExCheck.Config.Generator do
     ## allow multiple mix check runs simultaneously
     # lock: false,
 
+    ## enforce only one mix check at a time across the entire machine
+    # lock_global: true,
+
     ## list of tools (see `mix check` docs for a list of default curated tools)
     tools: [
       ## curated tools may be disabled (e.g. the check for compilation warnings)
