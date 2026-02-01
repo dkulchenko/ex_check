@@ -1,13 +1,15 @@
 defmodule ExCheck.Command do
   @moduledoc false
 
-  @type cancel_signal :: :sigterm
+  @type cancel_signal :: :sigterm | :sigkill
   @type cancel_info :: %{
           optional(:canceled) => boolean(),
           optional(:signal) => cancel_signal() | nil,
           optional(:process_group) => boolean(),
           optional(:os_pid) => non_neg_integer() | nil
         }
+
+  @default_sigkill_after_ms 2_000
 
   def run(command, opts \\ []) do
     {output, status, duration, _cancel_info} =
@@ -61,7 +63,7 @@ defmodule ExCheck.Command do
   end
 
   def stop(%Task{} = task) do
-    send(task.pid, {:cancel, :sigterm})
+    send(task.pid, {:cancel, :sigterm, @default_sigkill_after_ms})
     :ok
   catch
     :exit, _ -> :ok
@@ -133,6 +135,10 @@ defmodule ExCheck.Command do
         handle_port(port, stream_fn, output, false, start_time, cancel_info)
 
       {:cancel, :sigterm} ->
+        send(self(), {:cancel, :sigterm, @default_sigkill_after_ms})
+        handle_port(port, stream_fn, output, silenced, start_time, cancel_info)
+
+      {:cancel, :sigterm, sigkill_after_ms} ->
         os_pid = cancel_info[:os_pid] || get_os_pid(port)
 
         cancel_info =
@@ -141,32 +147,63 @@ defmodule ExCheck.Command do
           |> Map.put(:canceled, true)
           |> Map.put(:signal, :sigterm)
 
-        maybe_sigterm_process_group(cancel_info)
+        cancel_info = maybe_send_signal(cancel_info, :sigterm)
+        cancel_info = maybe_schedule_sigkill(cancel_info, sigkill_after_ms)
+        handle_port(port, stream_fn, output, silenced, start_time, cancel_info)
+
+      {:cancel_escalate, :sigkill} ->
+        cancel_info =
+          if cancel_info[:canceled] and cancel_info[:signal] != :sigkill do
+            cancel_info
+            |> maybe_send_signal(:sigkill)
+            |> Map.put(:signal, :sigkill)
+          else
+            cancel_info
+          end
+
         handle_port(port, stream_fn, output, silenced, start_time, cancel_info)
     end
   end
 
-  defp maybe_sigterm_process_group(%{os_pid: os_pid, process_group: process_group})
-       when is_integer(os_pid) do
-    if process_group do
-      tree = process_tree_pids(os_pid)
-      children = Enum.reject(tree, &(&1 == os_pid))
-
-      Enum.each(children, fn pid ->
-        _ = System.cmd("kill", ["-TERM", "#{pid}"], stderr_to_stdout: true)
-      end)
-
-      _ = System.cmd("kill", ["-TERM", "#{os_pid}"], stderr_to_stdout: true)
+  defp maybe_schedule_sigkill(cancel_info, sigkill_after_ms)
+       when is_integer(sigkill_after_ms) and sigkill_after_ms > 0 do
+    if cancel_info[:sigkill_timer_ref] do
+      cancel_info
     else
-      _ = System.cmd("kill", ["-TERM", "#{os_pid}"], stderr_to_stdout: true)
+      ref = Process.send_after(self(), {:cancel_escalate, :sigkill}, sigkill_after_ms)
+      Map.put(cancel_info, :sigkill_timer_ref, ref)
     end
-
-    :ok
-  catch
-    _ -> :ok
   end
 
-  defp maybe_sigterm_process_group(_), do: :ok
+  defp maybe_schedule_sigkill(cancel_info, _), do: cancel_info
+
+  defp maybe_send_signal(cancel_info, signal)
+       when signal in [:sigterm, :sigkill] do
+    os_pid = cancel_info[:os_pid]
+    process_group = cancel_info[:process_group]
+
+    if is_integer(os_pid) do
+      pids =
+        if process_group do
+          tree = process_tree_pids(os_pid)
+          children = Enum.reject(tree, &(&1 == os_pid))
+          children ++ [os_pid]
+        else
+          [os_pid]
+        end
+
+      Enum.each(pids, fn pid ->
+        _ = System.cmd("kill", [kill_arg(signal), "#{pid}"], stderr_to_stdout: true)
+      end)
+    end
+
+    cancel_info
+  catch
+    _ -> cancel_info
+  end
+
+  defp kill_arg(:sigterm), do: "-TERM"
+  defp kill_arg(:sigkill), do: "-KILL"
 
   defp process_tree_pids(root_pid) when is_integer(root_pid) do
     do_process_tree_pids([root_pid], MapSet.new([root_pid]))
@@ -186,7 +223,7 @@ defmodule ExCheck.Command do
 
   defp child_pids(parent_pid) when is_integer(parent_pid) do
     with nil <- System.find_executable("pgrep"),
-         {out, 0} <- System.cmd("ps", ["-o", "pid=", "--ppid", "#{parent_pid}"], stderr_to_stdout: true) do
+         {out, 0} <- ps_children(parent_pid) do
       parse_pids(out)
     else
       pgrep when is_binary(pgrep) ->
@@ -197,6 +234,13 @@ defmodule ExCheck.Command do
 
       _ ->
         []
+    end
+  end
+
+  defp ps_children(parent_pid) when is_integer(parent_pid) do
+    case System.cmd("ps", ["-o", "pid=", "--ppid", "#{parent_pid}"], stderr_to_stdout: true) do
+      {out, 0} -> {out, 0}
+      _ -> System.cmd("ps", ["-o", "pid=", "-ppid", "#{parent_pid}"], stderr_to_stdout: true)
     end
   end
 

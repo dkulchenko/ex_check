@@ -110,7 +110,7 @@ defmodule ExCheck.Check do
         finish_fn: &finish_tool/2,
         cancel_fn: &cancel_tool/1,
         halt_fn: &halt_on_failure/1,
-        cancel_timeout_ms: 2_000
+        cancel_timeout_ms: 3_000
       ]
 
       case FailFastPipeline.run(tools, pipeline_opts) do
@@ -129,7 +129,7 @@ defmodule ExCheck.Check do
           terminated =
             Enum.map(running, fn {:pending, {name, _, _}} ->
               {:skipped, name,
-               {:terminated_early, {:tool_failed, failed_tool, :fail_fast, :sigterm}}}
+               {:terminated_early, {:tool_failed, failed_tool, :fail_fast, :sigterm_then_sigkill}}}
             end)
 
           {finished, did_not_run ++ terminated}
@@ -583,6 +583,8 @@ defmodule ExCheck.Check do
   end
 
   defp format_signal(:sigterm), do: "SIGTERM"
+  defp format_signal(:sigkill), do: "SIGKILL"
+  defp format_signal(:sigterm_then_sigkill), do: "SIGTERM (SIGKILL after 2s)"
   defp format_signal(other), do: to_string(other)
 
   defp tool_name_for_message({tool, app}), do: "#{tool} in #{app}"

@@ -79,6 +79,7 @@ defmodule ExCheck.CaseHelpers do
     File.write!(config_path, new_config)
     {_, 0} = System.cmd("mix", ~w[format], cd: project_dir)
     {_, 0} = System.cmd("mix", ~w[deps.get], cd: project_dir)
+    {_, 0} = System.cmd("mix", ~w[format], cd: project_dir)
   end
 
   def set_mix_app_mod(project_dir, mod) do
