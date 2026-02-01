@@ -158,7 +158,7 @@ defmodule ExCheck.Check.Compiler do
     Keyword.get(tool_opts, :enabled, true) == false ||
       (Keyword.has_key?(opts, :only) && !Enum.any?(opts, &(&1 == {:only, name}))) ||
       Enum.any?(opts, fn i -> i == {:except, name} end) ||
-      (Keyword.get(tool_opts, :full_only, false) && !opts[:full])
+      (Keyword.get(tool_opts, :full_only, false) && opts[:incremental])
   end
 
   defp find_failed_detection(name, tool_opts) do
@@ -228,7 +228,7 @@ defmodule ExCheck.Check.Compiler do
   end
 
   defp apply_git_changed(cmd, tool_opts, opts) do
-    if Keyword.get(tool_opts, :git_changed) && !opts[:full] do
+    if Keyword.get(tool_opts, :git_changed) && opts[:incremental] do
       extensions = Keyword.get(tool_opts, :git_changed_extensions, ~w[.ex .exs])
       include_prefixes = Keyword.get(tool_opts, :git_changed_include)
 
@@ -275,7 +275,7 @@ defmodule ExCheck.Check.Compiler do
       opts[:retry] && tool_opts[:retry] ->
         {:retry, tool_opts[:retry]}
 
-      opts[:full] && tool_opts[:full] ->
+      !opts[:incremental] && tool_opts[:full] ->
         {:full, tool_opts[:full]}
 
       true ->

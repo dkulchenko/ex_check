@@ -15,6 +15,9 @@ defmodule ExCheck.Config.Generator do
     ## always run tools in fix mode (put it in ~/.check.exs locally, not in project config)
     # fix: true,
 
+    ## always run in incremental mode (put it in ~/.check.exs locally, not in project config)
+    # incremental: true,
+
     ## don't retry automatically even if last run resulted in failures
     # retry: false,
 

@@ -4,13 +4,13 @@ defmodule ExCheck.Config.Default do
   # Default tool order tries to put short-running tools first in order for sequential output
   # streaming to display as many outputs as possible as soon as possible.
   #
-  # By default, tools run in "quick" mode optimized for fast iteration:
-  # - Compiler uses incremental compilation (no --force)
-  # - Tests run only stale tests (--stale)
-  # - Credo checks only git-changed files
-  # - Some tools (unused_deps, mix_audit, sobelow) are skipped
+  # By default, tools run in "full" mode with comprehensive checks:
+  # - Compiler uses --force for full recompilation
+  # - Tests run all tests
+  # - Credo checks all files
+  # - All tools enabled (unused_deps, mix_audit, sobelow)
   #
-  # Use --full flag to run comprehensive checks (all tools, full commands).
+  # Use --incremental flag for quick iteration (stale tests, changed files only, skip some tools).
   @curated_tools [
     {:compiler, "mix compile --warnings-as-errors",
      full: "mix compile --warnings-as-errors --force"},
