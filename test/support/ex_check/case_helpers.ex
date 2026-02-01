@@ -49,6 +49,10 @@ defmodule ExCheck.CaseHelpers do
   end
 
   def set_mix_deps(project_dir, deps) do
+    set_mix_deps(project_dir, deps, [])
+  end
+
+  def set_mix_deps(project_dir, deps, cmd_opts) when is_list(cmd_opts) do
     config_path = "#{project_dir}/mix.exs"
     deps_from = ~r/ *defp deps.*end\n/Us
 
@@ -77,9 +81,9 @@ defmodule ExCheck.CaseHelpers do
     unless String.contains?(new_config, "ex_check"), do: raise("unable to add ex_check dep")
 
     File.write!(config_path, new_config)
-    {_, 0} = System.cmd("mix", ~w[format], cd: project_dir)
-    {_, 0} = System.cmd("mix", ~w[deps.get], cd: project_dir)
-    {_, 0} = System.cmd("mix", ~w[format], cd: project_dir)
+    {_, 0} = System.cmd("mix", ~w[format], Keyword.merge([cd: project_dir], cmd_opts))
+    {_, 0} = System.cmd("mix", ~w[deps.get], Keyword.merge([cd: project_dir], cmd_opts))
+    {_, 0} = System.cmd("mix", ~w[format], Keyword.merge([cd: project_dir], cmd_opts))
   end
 
   def set_mix_app_mod(project_dir, mod) do

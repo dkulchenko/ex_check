@@ -21,7 +21,9 @@ defmodule ExCheck.ProjectCases.FailFastTest do
     output =
       System.cmd("mix", ~w[check --only fail_tool --only slow_tool], cd: project_dir) |> cmd_exit(1)
 
+    assert output =~ "=> running"
     assert output =~ "fail_tool"
+    assert output =~ "\nfail\n"
     assert output =~ "error code"
 
     assert output =~ "slow_tool"

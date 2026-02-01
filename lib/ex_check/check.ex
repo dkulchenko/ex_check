@@ -108,6 +108,10 @@ defmodule ExCheck.Check do
         throttle_fn: &throttle_tools(&1, &2, &3, opts),
         start_fn: &start_tool(&1, opts),
         finish_fn: &finish_tool/2,
+        display_start_fn: &display_tool_start/1,
+        display_print_fn: &display_tool_print/1,
+        display_finish_fn: &display_tool_finish/1,
+        display_abort_fn: &display_tool_abort/0,
         cancel_fn: &cancel_tool/1,
         halt_fn: &halt_on_failure/1,
         cancel_timeout_ms: 3_000
@@ -306,6 +310,34 @@ defmodule ExCheck.Check do
       end
 
     {status, {name, cmd, opts}, {code, output, duration, meta}}
+  end
+
+  defp display_tool_start({:running, {name, _cmd, opts}, task}) do
+    mode_suffix = if mode = opts[:mode], do: [" in ", b(mode), " mode"], else: []
+
+    Printer.info([:magenta, "=> running "] ++ format_tool_name(name) ++ mode_suffix)
+    Printer.info()
+    IO.write(IO.ANSI.faint())
+
+    Command.unsilence(task)
+    :ok
+  end
+
+  defp display_tool_print({output, _code, stream_fn, silenced, _duration, _cancel_info})
+       when is_binary(output) and is_function(stream_fn, 1) do
+    if silenced, do: stream_fn.(output)
+    :ok
+  end
+
+  defp display_tool_finish(output) when is_binary(output) do
+    if output_needs_padding?(output), do: Printer.info()
+    IO.write(IO.ANSI.reset())
+    :ok
+  end
+
+  defp display_tool_abort do
+    IO.write(IO.ANSI.reset())
+    :ok
   end
 
   defp finish_tool(
@@ -524,9 +556,9 @@ defmodule ExCheck.Check do
     [
       "terminated early (",
       b(format_signal(signal)),
-      ") due to ",
+      ") because ",
       q(format_tool_name(failed_tool)),
-      " failing, and running in ",
+      " failed while running in ",
       q("fail fast"),
       " mode"
     ]
