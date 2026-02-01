@@ -55,6 +55,10 @@ defmodule ExCheck.Manifest do
   end
 
   defp serialize_check({:ok, {name, _, _}, _}), do: "PASS #{serialize_tool_name(name)}"
+
+  defp serialize_check({:error, {name, _, _}, {_, _, _, %{canceled: true}}}),
+    do: "SKIP #{serialize_tool_name(name)}"
+
   defp serialize_check({:error, {name, _, _}, _}), do: "FAIL #{serialize_tool_name(name)}"
   defp serialize_check({:skipped, name, _}), do: "SKIP #{serialize_tool_name(name)}"
 

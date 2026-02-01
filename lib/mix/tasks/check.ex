@@ -197,7 +197,7 @@ defmodule Mix.Tasks.Check do
   - `:incremental` - toggles running tools in incremental mode (skips full_only tools, uses base commands, filters by git-changed files); default: `false`
   - `:retry` - toggles running only checks that have failed in the last run; default: 'true' if manifest exists
   - `:reprint` - toggles reprinting output from failed tools once all tools finish; default: `true`
-  - `:fail_fast` - stops running remaining tools as soon as a failure is detected; default: `false`
+  - `:fail_fast` - stops running remaining tools as soon as a failure is detected; default: `true`
   - `:tools` - a list of tools to run; default: curated tools; more info below
 
   Tool list under `:tools` key may contain following tool tuples:

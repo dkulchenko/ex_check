@@ -245,7 +245,9 @@ defmodule ExCheck.Check.Compiler do
   end
 
   defp get_changed_files(extensions, include_prefixes) do
-    case System.cmd("git", ["diff", "--name-only", "--diff-filter=d", "HEAD"], stderr_to_stdout: true) do
+    case System.cmd("git", ["diff", "--name-only", "--diff-filter=d", "HEAD"],
+           stderr_to_stdout: true
+         ) do
       {output, 0} ->
         output
         |> String.split("\n", trim: true)

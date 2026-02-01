@@ -2,6 +2,7 @@ defmodule ExCheck.Check do
   @moduledoc false
 
   alias ExCheck.Check.Compiler
+  alias ExCheck.Check.FailFastPipeline
   alias ExCheck.Check.Pipeline
   alias ExCheck.Command
   alias ExCheck.Config
@@ -50,13 +51,21 @@ defmodule ExCheck.Check do
 
     start_time = DateTime.utc_now()
     compiler_result = run_compiler(compiler)
-    others_results = if run_others?(compiler_result), do: run_others(others, opts), else: []
+
+    others_results =
+      if run_others?(compiler_result) do
+        run_others(others, opts)
+      else
+        mark_did_not_run(others, opts, :compiler)
+      end
+
     total_duration = DateTime.diff(DateTime.utc_now(), start_time)
 
     all_results = [compiler_result | others_results]
-    failed_results = Enum.filter(all_results, &match?({:error, _, _}, &1))
+    failed_results = Enum.filter(all_results, &failed_result?/1)
 
     maybe_reprint_errors(failed_results, opts)
+    maybe_print_terminated_outputs(all_results, opts)
     print_summary(all_results, total_duration, opts)
     Manifest.save(all_results, opts)
     maybe_set_exit_status(failed_results)
@@ -68,7 +77,7 @@ defmodule ExCheck.Check do
 
   @compile_warn_out "Compilation failed due to warnings while using the --warnings-as-errors option"
 
-  defp run_others?(_compiler_result = {status, _, {_, output, _}}) do
+  defp run_others?(_compiler_result = {status, _, {_, output, _, _meta}}) do
     status == :ok or String.contains?(output, @compile_warn_out)
   end
 
@@ -79,39 +88,76 @@ defmodule ExCheck.Check do
     finished ++ skipped ++ skipped_runtime
   end
 
+  defp mark_did_not_run(tools, opts, failed_tool) do
+    mode = if Keyword.get(opts, :fail_fast, false), do: :fail_fast, else: :normal
+
+    Enum.map(tools, fn
+      {:pending, {name, _cmd, _tool_opts}} ->
+        {:skipped, name, {:did_not_run, {:tool_failed, failed_tool, mode}}}
+
+      skipped = {:skipped, _name, _reason} ->
+        skipped
+    end)
+  end
+
   defp run_tools(tools, opts) do
     fail_fast? = Keyword.get(opts, :fail_fast, false)
 
-    pipeline_opts = [
-      throttle_fn: &throttle_tools(&1, &2, &3, opts),
-      start_fn: &start_tool/1,
-      collect_fn: &await_tool/1
-    ]
+    if fail_fast? do
+      pipeline_opts = [
+        throttle_fn: &throttle_tools(&1, &2, &3, opts),
+        start_fn: &start_tool(&1, opts),
+        finish_fn: &finish_tool/2,
+        cancel_fn: &cancel_tool/1,
+        halt_fn: &halt_on_failure/1,
+        cancel_timeout_ms: 2_000
+      ]
 
-    pipeline_opts =
-      if fail_fast? do
-        pipeline_opts ++
-          [
-            cancel_fn: &cancel_tool/1,
-            halt_fn: &halt_on_failure/1
-          ]
-      else
-        pipeline_opts
+      case FailFastPipeline.run(tools, pipeline_opts) do
+        {finished, broken} ->
+          skipped = filter_broken_skipped(broken, finished)
+          {finished, skipped}
+
+        {:halted, finished, pending, running, {:failure, failed_tool}} ->
+          finished = Enum.map(finished, &maybe_mark_fail_fast_canceled(&1, failed_tool))
+
+          did_not_run =
+            Enum.map(pending, fn {:pending, {name, _, _}} ->
+              {:skipped, name, {:did_not_run, {:tool_failed, failed_tool, :fail_fast}}}
+            end)
+
+          terminated =
+            Enum.map(running, fn {:pending, {name, _, _}} ->
+              {:skipped, name,
+               {:terminated_early, {:tool_failed, failed_tool, :fail_fast, :sigterm}}}
+            end)
+
+          {finished, did_not_run ++ terminated}
       end
+    else
+      pipeline_opts = [
+        throttle_fn: &throttle_tools(&1, &2, &3, opts),
+        start_fn: &start_tool(&1, opts),
+        collect_fn: &await_tool/1
+      ]
 
-    case Pipeline.run(tools, pipeline_opts) do
-      {finished, broken} ->
-        skipped = filter_broken_skipped(broken, finished)
-        {finished, skipped}
+      case Pipeline.run(tools, pipeline_opts) do
+        {finished, broken} ->
+          skipped = filter_broken_skipped(broken, finished)
+          {finished, skipped}
 
-      {:halted, finished, pending, running, _reason} ->
-        not_finished = pending ++ running
-        skipped = Enum.map(not_finished, &mark_not_finished/1)
-        {finished, skipped}
+        {:halted, finished, pending, running, _reason} ->
+          not_finished = pending ++ running
+          skipped = Enum.map(not_finished, &mark_not_finished/1)
+          {finished, skipped}
+      end
     end
   end
 
-  defp halt_on_failure({:error, _, _}), do: {:halt, :failure}
+  defp halt_on_failure({:error, {name, _, _}, {_, _, _, meta}}) do
+    if meta[:canceled], do: :cont, else: {:halt, {:failure, name}}
+  end
+
   defp halt_on_failure(_), do: :cont
 
   defp filter_broken_skipped(broken, finished) do
@@ -131,7 +177,7 @@ defmodule ExCheck.Check do
 
   defp run_tool(tool) do
     tool
-    |> start_tool()
+    |> start_tool([])
     |> await_tool()
   end
 
@@ -174,7 +220,10 @@ defmodule ExCheck.Check do
   defp satisfied_dep_status?(:any, _), do: true
   defp satisfied_dep_status?(:ok, {:ok, _, _}), do: true
   defp satisfied_dep_status?(:error, {:error, _, _}), do: true
-  defp satisfied_dep_status?(code, {_, _, {actual, _, _}}) when is_integer(code), do: code == actual
+
+  defp satisfied_dep_status?(code, {_, _, {actual, _, _, _}}) when is_integer(code),
+    do: code == actual
+
   defp satisfied_dep_status?(_, _), do: false
 
   defp throttle_parallel(selected, _, true), do: selected
@@ -206,8 +255,14 @@ defmodule ExCheck.Check do
   defp umbrella_instance_from_same_app?({name, _}, {name, _}), do: true
   defp umbrella_instance_from_same_app?(_, _), do: false
 
-  defp start_tool({:pending, {name, cmd, opts}}) do
-    opts = Keyword.merge(opts, stream: true, silenced: true, tint: IO.ANSI.faint())
+  defp start_tool({:pending, {name, cmd, opts}}, run_opts) do
+    fail_fast? = Keyword.get(run_opts, :fail_fast, false)
+
+    opts =
+      opts
+      |> Keyword.merge(stream: true, silenced: true, tint: IO.ANSI.faint())
+      |> Keyword.put(:process_group, fail_fast?)
+
     task = Command.async(cmd, opts)
 
     {:running, {name, cmd, opts}, task}
@@ -229,7 +284,7 @@ defmodule ExCheck.Check do
     Printer.info()
     IO.write(IO.ANSI.faint())
 
-    {output, code, duration} =
+    {output, code, duration, cancel_info} =
       task
       |> Command.unsilence()
       |> Command.await()
@@ -237,10 +292,64 @@ defmodule ExCheck.Check do
     if output_needs_padding?(output), do: Printer.info()
     IO.write(IO.ANSI.reset())
 
-    status = if code == 0, do: :ok, else: :error
+    meta =
+      Map.merge(
+        %{canceled: false, signal: nil, process_group: false, os_pid: nil},
+        cancel_info || %{}
+      )
 
-    {status, {name, cmd, opts}, {code, output, duration}}
+    status =
+      cond do
+        meta[:canceled] -> :error
+        code == 0 -> :ok
+        true -> :error
+      end
+
+    {status, {name, cmd, opts}, {code, output, duration, meta}}
   end
+
+  defp finish_tool(
+         {:running, {name, cmd, opts}, _task},
+         {output, code, _stream_fn, _silenced, duration, cancel_info}
+       ) do
+    meta =
+      Map.merge(
+        %{canceled: false, signal: nil, process_group: false, os_pid: nil},
+        cancel_info || %{}
+      )
+
+    status =
+      cond do
+        meta[:canceled] -> :error
+        code == 0 -> :ok
+        true -> :error
+      end
+
+    {status, {name, cmd, opts}, {code, output, duration, meta}}
+  end
+
+  defp finish_tool({:running, {name, cmd, opts}, _task}, {:down, reason}) do
+    meta = %{
+      canceled: false,
+      signal: nil,
+      process_group: false,
+      os_pid: nil,
+      crashed: true,
+      reason: reason
+    }
+
+    {:error, {name, cmd, opts}, {1, "", 0, meta}}
+  end
+
+  defp maybe_mark_fail_fast_canceled({:error, tool, {code, output, duration, meta}}, failed_tool) do
+    if meta[:canceled] do
+      {:error, tool, {code, output, duration, Map.put(meta, :fail_fast_failed_tool, failed_tool)}}
+    else
+      {:error, tool, {code, output, duration, meta}}
+    end
+  end
+
+  defp maybe_mark_fail_fast_canceled(other, _failed_tool), do: other
 
   defp output_needs_padding?(output) do
     not (String.match?(output, ~r/\n{2,}$/) or output == "")
@@ -253,12 +362,67 @@ defmodule ExCheck.Check do
   end
 
   defp reprint_errors(failed_tools) do
-    Enum.each(failed_tools, fn {_, {name, _, _}, {_, output, _}} ->
+    Enum.each(failed_tools, fn {_, {name, _, _}, {_, output, _, _}} ->
       Printer.info([:red, "=> reprinting errors from "] ++ format_tool_name(name))
       Printer.info()
       IO.write(output)
       if output_needs_padding?(output), do: Printer.info()
     end)
+  end
+
+  @terminated_output_max_bytes 200_000
+
+  defp maybe_print_terminated_outputs(all_results, opts) do
+    if Keyword.get(opts, :reprint, true) do
+      all_results
+      |> Enum.filter(&terminated_result?/1)
+      |> Enum.each(fn {_status, {name, _, _}, {_code, output, _duration, meta}} ->
+        Printer.info(
+          [:cyan, "=> output from "] ++ format_tool_name(name) ++ [:cyan, " (terminated early)"]
+        )
+
+        Printer.info()
+
+        output = truncate_output(output, @terminated_output_max_bytes)
+        IO.write(output)
+        if output_needs_padding?(output), do: Printer.info()
+
+        marker = terminated_output_marker(meta)
+        IO.write(marker)
+        Printer.info()
+      end)
+    end
+  end
+
+  defp terminated_output_marker(meta) do
+    signal = format_signal(meta[:signal] || :sigterm)
+
+    case meta[:fail_fast_failed_tool] do
+      nil ->
+        "--- ex_check: output may be incomplete (tool terminated early; #{signal} sent) ---\n"
+
+      failed_tool ->
+        failed_tool = tool_name_for_message(failed_tool)
+
+        "--- ex_check: output may be incomplete (tool terminated early; #{signal} sent due to \"#{failed_tool}\" failing in \"fail fast\" mode) ---\n"
+    end
+  end
+
+  defp truncate_output(output, max_bytes) when is_binary(output) do
+    if byte_size(output) <= max_bytes do
+      output
+    else
+      head_bytes = div(max_bytes, 2)
+      tail_bytes = max_bytes - head_bytes
+      omitted = byte_size(output) - max_bytes
+
+      head = binary_part(output, 0, head_bytes)
+      tail = binary_part(output, byte_size(output) - tail_bytes, tail_bytes)
+
+      head <>
+        "\n--- ex_check: output truncated (#{omitted} bytes omitted) ---\n" <>
+        tail
+    end
   end
 
   defp print_summary(items, total_duration, opts) do
@@ -273,21 +437,38 @@ defmodule ExCheck.Check do
   end
 
   defp get_summary_item_order({:ok, {name, _, _}, _}), do: {0, normalize_tool_name(name)}
-  defp get_summary_item_order({:error, {name, _, _}, _}), do: {1, normalize_tool_name(name)}
-  defp get_summary_item_order({:skipped, name, _}), do: {2, normalize_tool_name(name)}
+
+  defp get_summary_item_order({:error, {name, _, _}, {_, _, _, meta}}) do
+    if meta[:canceled], do: {2, normalize_tool_name(name)}, else: {1, normalize_tool_name(name)}
+  end
+
+  defp get_summary_item_order({:skipped, name, _}), do: {3, normalize_tool_name(name)}
 
   defp normalize_tool_name(name = {_, _}), do: name
   defp normalize_tool_name(name), do: {name, 0}
 
-  defp print_summary_item({:ok, {name, _, opts}, {_, _, duration}}, _) do
+  defp print_summary_item({:ok, {name, _, opts}, {_, _, duration, _meta}}, _) do
     name = format_tool_name(name)
     took = format_duration(duration)
-    mode = if mode = opts[:mode], do: [" ", to_string(mode)], else: []
+    mode = opts[:mode]
+    mode = if mode in [:fix, :retry], do: [" ", to_string(mode)], else: []
 
     Printer.info([:green, " ✓ ", name, mode, " success in ", b(took)])
   end
 
-  defp print_summary_item({:error, {name, _, _}, {code, _, duration}}, _) do
+  defp print_summary_item(
+         {:error, {name, _, _}, {_code, _output, _duration, %{canceled: true} = meta}},
+         _opts
+       ) do
+    reason =
+      {:terminated_early,
+       {:tool_failed, meta[:fail_fast_failed_tool], :fail_fast, meta[:signal] || :sigterm}}
+      |> format_skip_reason()
+
+    Printer.info([:cyan, "   ", format_tool_name(name), " skipped due to ", reason])
+  end
+
+  defp print_summary_item({:error, {name, _, _}, {code, _output, duration, _meta}}, _) do
     name = format_tool_name(name)
     took = format_duration(duration)
     Printer.info([:red, " ✕ ", name, " error code ", b(code), " in ", b(took)])
@@ -296,8 +477,16 @@ defmodule ExCheck.Check do
   defp print_summary_item({:skipped, name, reason}, opts) do
     if Keyword.get(opts, :skipped, true) do
       name = format_tool_name(name)
-      reason = format_skip_reason(reason)
-      Printer.info([:cyan, "   ", name, " skipped due to ", reason])
+
+      case reason do
+        {:did_not_run, _} ->
+          reason = format_skip_reason(reason)
+          Printer.info([:cyan, "   ", name, " ", reason])
+
+        _ ->
+          reason = format_skip_reason(reason)
+          Printer.info([:cyan, "   ", name, " skipped due to ", reason])
+      end
     end
   end
 
@@ -311,6 +500,50 @@ defmodule ExCheck.Check do
 
   defp format_skip_reason(:not_finished) do
     ["not finished"]
+  end
+
+  defp format_skip_reason({:did_not_run, {:tool_failed, failed_tool, :fail_fast}}) do
+    [
+      "did not run due to ",
+      q(format_tool_name(failed_tool)),
+      " failing, and running in ",
+      q("fail fast"),
+      " mode"
+    ]
+  end
+
+  defp format_skip_reason({:did_not_run, {:tool_failed, failed_tool, :normal}}) do
+    ["did not run due to ", q(format_tool_name(failed_tool)), " failing"]
+  end
+
+  defp format_skip_reason({:terminated_early, {:tool_failed, nil, :fail_fast, signal}}) do
+    ["terminated early (", b(format_signal(signal)), ") while running in ", q("fail fast"), " mode"]
+  end
+
+  defp format_skip_reason({:terminated_early, {:tool_failed, failed_tool, :fail_fast, signal}}) do
+    [
+      "terminated early (",
+      b(format_signal(signal)),
+      ") due to ",
+      q(format_tool_name(failed_tool)),
+      " failing, and running in ",
+      q("fail fast"),
+      " mode"
+    ]
+  end
+
+  defp format_skip_reason({:terminated_early, {:tool_failed, nil, :normal, signal}}) do
+    ["terminated early (", b(format_signal(signal)), ")"]
+  end
+
+  defp format_skip_reason({:terminated_early, {:tool_failed, failed_tool, :normal, signal}}) do
+    [
+      "terminated early (",
+      b(format_signal(signal)),
+      ") due to ",
+      q(format_tool_name(failed_tool)),
+      " failing"
+    ]
   end
 
   defp format_skip_reason({:package, name}) do
@@ -329,6 +562,10 @@ defmodule ExCheck.Check do
     ["missing directory ", b(cd)]
   end
 
+  defp format_skip_reason({:git_changed, reason}) do
+    ["git-changed skipped (", b(reason), ")"]
+  end
+
   defp format_tool_name(name) when is_atom(name) do
     b(name)
   end
@@ -340,6 +577,16 @@ defmodule ExCheck.Check do
   defp b(inner) do
     [:bright, to_string(inner), :normal]
   end
+
+  defp q(inner) do
+    ["\"", inner, "\""]
+  end
+
+  defp format_signal(:sigterm), do: "SIGTERM"
+  defp format_signal(other), do: to_string(other)
+
+  defp tool_name_for_message({tool, app}), do: "#{tool} in #{app}"
+  defp tool_name_for_message(tool), do: to_string(tool)
 
   defp format_duration(secs) do
     min = div(secs, 60)
@@ -354,4 +601,14 @@ defmodule ExCheck.Check do
       System.at_exit(fn _ -> exit({:shutdown, 1}) end)
     end
   end
+
+  defp terminated_result?({:error, _tool, {_code, _output, _duration, meta}}),
+    do: meta[:canceled] == true
+
+  defp terminated_result?(_), do: false
+
+  defp failed_result?({:error, _tool, {_code, _output, _duration, meta}}),
+    do: meta[:canceled] != true
+
+  defp failed_result?(_), do: false
 end

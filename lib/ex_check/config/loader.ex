@@ -105,9 +105,19 @@ defmodule ExCheck.Config.Loader do
   defp merge_tool({name, opts}, {name, next_opts}), do: {name, merge_tool_opts(opts, next_opts)}
 
   defp merge_tool_opts(opts, next_opts) do
-    opts
-    |> Keyword.merge(next_opts)
-    |> Keyword.put(:env, Map.merge(opts[:env] || %{}, next_opts[:env] || %{}))
-    |> Keyword.put(:umbrella, Keyword.merge(opts[:umbrella] || [], next_opts[:umbrella] || []))
+    merged =
+      opts
+      |> Keyword.merge(next_opts)
+      |> Keyword.put(:env, Map.merge(opts[:env] || %{}, next_opts[:env] || %{}))
+      |> Keyword.put(:umbrella, Keyword.merge(opts[:umbrella] || [], next_opts[:umbrella] || []))
+
+    merged =
+      if Keyword.has_key?(next_opts, :command) and not Keyword.has_key?(next_opts, :full) do
+        Keyword.delete(merged, :full)
+      else
+        merged
+      end
+
+    merged
   end
 end

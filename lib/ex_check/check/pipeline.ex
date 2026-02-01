@@ -29,6 +29,7 @@ defmodule ExCheck.Check.Pipeline do
       receive do
         {:finished, payload, result} ->
           {pending, collecting, finished} = finish(payload, result, pending, collecting, finished)
+
           case halt_fn.(result) do
             :cont ->
               loop({pending, running, collecting, finished}, opts, halt_fn, cancel_fn)
