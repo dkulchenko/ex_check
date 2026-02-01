@@ -18,6 +18,9 @@ defmodule ExCheck.Config.Generator do
     ## don't retry automatically even if last run resulted in failures
     # retry: false,
 
+    ## allow multiple mix check runs simultaneously
+    # lock: false,
+
     ## list of tools (see `mix check` docs for a list of default curated tools)
     tools: [
       ## curated tools may be disabled (e.g. the check for compilation warnings)

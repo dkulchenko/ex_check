@@ -5,6 +5,7 @@ defmodule ExCheck.Check do
   alias ExCheck.Check.Pipeline
   alias ExCheck.Command
   alias ExCheck.Config
+  alias ExCheck.Lock
   alias ExCheck.Manifest
   alias ExCheck.Printer
 
@@ -17,7 +18,11 @@ defmodule ExCheck.Check do
       |> maybe_toggle_retry_mode()
       |> Manifest.convert_retry_to_only()
 
-    compile_and_run_tools(tools, opts)
+    if Keyword.get(opts, :lock, true) do
+      Lock.with_lock(fn -> compile_and_run_tools(tools, opts) end)
+    else
+      compile_and_run_tools(tools, opts)
+    end
   end
 
   defp maybe_toggle_retry_mode(opts) do

@@ -260,6 +260,7 @@ defmodule Mix.Tasks.Check do
   - `--[no-]retry` - (don't) run only checks that have failed in the last run
   - `--[no-]reprint` - (don't) reprint output from failed tools once all tools finish
   - `--[no-]fail-fast` - (don't) stop after the first failure
+  - `--[no-]lock` - (don't) wait for other `mix check` runs to finish before starting
   - `--[no-]parallel` - (don't) run tools in parallel
   - `--[no-]skipped` - (don't) print skipped tools in summary
 
@@ -290,6 +291,7 @@ defmodule Mix.Tasks.Check do
     exit_status: :boolean,
     fix: :boolean,
     full: :boolean,
+    lock: :boolean,
     manifest: :string,
     only: :keep,
     parallel: :boolean,
@@ -303,6 +305,7 @@ defmodule Mix.Tasks.Check do
     c: :config,
     f: :fix,
     F: :full,
+    l: :lock,
     m: :manifest,
     o: :only,
     r: :retry,
